@@ -19,10 +19,13 @@ public class MainActivity extends Activity {
     WebView web;
     SharedPreferences sp;
     boolean errShown = false;
+    String path = "";
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         sp = getSharedPreferences("maison", MODE_PRIVATE);
+        String ex = getIntent().getStringExtra("path");
+        if (ex != null) path = ex;
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         web = new WebView(this);
         setContentView(web);
@@ -40,6 +43,7 @@ public class MainActivity extends Activity {
         web.setWebChromeClient(new WebChromeClient());
         if (sp.getString("local", "").isEmpty() && sp.getString("remote", "").isEmpty()) showSettings("Adresses de Home Assistant :");
         else start();
+        if (getIntent().getBooleanExtra("settings", false)) showSettings("Réglages :");
     }
 
     void start() {
@@ -49,7 +53,7 @@ public class MainActivity extends Activity {
             String target = remote.isEmpty() ? local : remote;
             if (!local.isEmpty() && reachable(local)) target = local;
             final String t = target;
-            runOnUiThread(() -> web.loadUrl(t));
+            runOnUiThread(() -> web.loadUrl(t + path));
         }).start();
     }
 
@@ -65,17 +69,21 @@ public class MainActivity extends Activity {
         LinearLayout l = new LinearLayout(this);
         l.setOrientation(LinearLayout.VERTICAL);
         l.setPadding(48, 24, 48, 0);
-        final EditText a = new EditText(this), r = new EditText(this);
+        final EditText a = new EditText(this), r = new EditText(this), tk = new EditText(this);
         a.setHint("Adresse maison (ex: http://192.168.86.160:8123)");
         r.setHint("Adresse à distance (ex: http://100.x.x.x:8123)");
         a.setInputType(InputType.TYPE_TEXT_VARIATION_URI); r.setInputType(InputType.TYPE_TEXT_VARIATION_URI);
         a.setText(sp.getString("local", "http://192.168.86.160:8123"));
         r.setText(sp.getString("remote", ""));
-        l.addView(a); l.addView(r);
+        tk.setHint("Jeton d'accès longue durée (pour le widget)");
+        tk.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        tk.setText(sp.getString("token", ""));
+        l.addView(a); l.addView(r); l.addView(tk);
         new AlertDialog.Builder(this).setTitle(title).setView(l).setCancelable(false)
             .setPositiveButton("Valider", (d, w) -> {
-                sp.edit().putString("local", fix(a.getText().toString())).putString("remote", fix(r.getText().toString())).apply();
+                sp.edit().putString("local", fix(a.getText().toString())).putString("remote", fix(r.getText().toString())).putString("token", tk.getText().toString().trim()).apply();
                 start();
+                new Thread(() -> PlanWidget.update(getApplicationContext())).start();
             }).show();
     }
 
