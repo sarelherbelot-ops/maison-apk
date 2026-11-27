@@ -25,6 +25,7 @@ public class MainActivity extends Activity {
         sp = getSharedPreferences("maison", MODE_PRIVATE);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         web = new WebView(this);
+        web.setBackgroundColor(0xFF111113);
         setContentView(web);
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -38,25 +39,35 @@ public class MainActivity extends Activity {
             }
         });
         web.setWebChromeClient(new WebChromeClient());
-        if (sp.getString("local", "").isEmpty() && sp.getString("remote", "").isEmpty()) showSettings("Adresses de Home Assistant :");
-        else start();
+        start();
     }
+
+    static final String MAISON = "http://192.168.86.160:8123";
 
     void start() {
         errShown = false;
-        final String local = sp.getString("local", ""), remote = sp.getString("remote", "");
+        web.loadData("<html><body style='background:#111113;color:#d4b054;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:90vh;font-size:20px'>Connexion à la maison…</body></html>", "text/html; charset=utf-8", "UTF-8");
+        final String local = sp.getString("local", MAISON), remote = sp.getString("remote", "");
         new Thread(() -> {
-            String target = remote.isEmpty() ? local : remote;
-            if (!local.isEmpty() && reachable(local)) target = local;
-            final String t = target;
-            runOnUiThread(() -> web.loadUrl(t));
+            // Avec Tailscale (sous-réseau de la maison), la même adresse marche partout.
+            // On essaie l'adresse maison, puis l'adresse à distance, avec un délai plus long hors de la maison.
+            String t = null;
+            for (int essai = 0; essai < 2 && t == null; essai++) {
+                if (!local.isEmpty() && reachable(local, essai == 0 ? 2500 : 6000)) t = local;
+                else if (!remote.isEmpty() && !remote.equals(local) && reachable(remote, essai == 0 ? 2500 : 6000)) t = remote;
+            }
+            final String cible = t;
+            runOnUiThread(() -> {
+                if (cible != null) web.loadUrl(cible);
+                else { errShown = true; showSettings("Maison injoignable. Vérifie que Tailscale est connecté, puis Valider pour réessayer :"); }
+            });
         }).start();
     }
 
-    boolean reachable(String u) {
+    boolean reachable(String u, int ms) {
         try {
             HttpURLConnection c = (HttpURLConnection) new URL(u).openConnection();
-            c.setConnectTimeout(1500); c.setReadTimeout(1500);
+            c.setConnectTimeout(ms); c.setReadTimeout(ms);
             c.getResponseCode(); c.disconnect(); return true;
         } catch (Exception e) { return false; }
     }
@@ -69,7 +80,7 @@ public class MainActivity extends Activity {
         a.setHint("Adresse maison (ex: http://192.168.86.160:8123)");
         r.setHint("Adresse à distance (ex: http://100.x.x.x:8123)");
         a.setInputType(InputType.TYPE_TEXT_VARIATION_URI); r.setInputType(InputType.TYPE_TEXT_VARIATION_URI);
-        a.setText(sp.getString("local", "http://192.168.86.160:8123"));
+        a.setText(sp.getString("local", MAISON));
         r.setText(sp.getString("remote", ""));
         l.addView(a); l.addView(r);
         new AlertDialog.Builder(this).setTitle(title).setView(l).setCancelable(false)
